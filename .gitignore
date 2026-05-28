@@ -1,0 +1,16 @@
+/venv
+.env
+db.sqlite3
+db.sqlite3.bak
+backup-full.json
+todo.md
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE files
+.vscode/
+.idea/
+
