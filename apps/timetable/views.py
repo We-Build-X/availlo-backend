@@ -13,6 +13,8 @@ from apps.rooms.models import Room, Building
 import re
 from datetime import datetime
 import time as time_module
+from rest_framework import status
+from rest_framework.decorators import api_view
 
 MODELS_TO_TRY = [
     'gemini-3.1-flash-lite', 
@@ -237,4 +239,6 @@ class UploadTimetableView(APIView):
         })
 
 
-
+@api_view(['GET'])
+def health_check(request):
+    return Response({"status": "ok"}, status=status.HTTP_200_OK)
