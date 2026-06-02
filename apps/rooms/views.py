@@ -6,16 +6,24 @@ from .serializers import RoomSerializer
 from .status_engine import get_room_status
 from datetime import datetime
 from .models import Room
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+    
 
 
 
 class RoomListView(APIView):
+    @extend_schema(
+        responses={200: RoomSerializer(many=True)}
+    )
     def get(self, request):
         rooms = Room.objects.select_related('building').all()
         serializer = RoomSerializer(rooms, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class RoomStatusView(APIView):
+    @extend_schema(
+        responses={200: RoomSerializer}
+    )
     def get(self, request, room_id):
         try:
             room = Room.objects.select_related('building').get(id=room_id)
@@ -28,6 +36,16 @@ class RoomStatusView(APIView):
     
 # get free room and also enable filtering free rooms by building
 class FreeRoomList(APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(name='building', description='Filter free rooms by building code (e.g. "ENG" for Engineering Building)', required=False, type=str)
+        ],
+        responses={
+            200: RoomSerializer(many=True),
+            404: OpenApiParameter(name='error', description='Error message if no rooms found', type=str),
+            
+            }
+    )
     def get(self, request):
         building_code = request.query_params.get('building', None)
         rooms = Room.objects.select_related('building').all()
@@ -49,6 +67,16 @@ class FreeRoomList(APIView):
         return Response(free_rooms, status=status.HTTP_200_OK)
 
 class SearchRoomView(APIView):
+    @extend_schema(
+            parameters=[
+                OpenApiParameter(name='q', description='Search query for room name', required=False, type=str)
+            ],
+            responses={
+                200: RoomSerializer(many=True),
+                404: OpenApiParameter(name='error', description='Error message if no rooms found', type=str),
+                
+            }
+    )
     def get(self, request):
         query = request.query_params.get('q', '')
         rooms = Room.objects.filter(name__icontains=query).select_related('building')

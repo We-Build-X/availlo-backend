@@ -13,8 +13,10 @@ from apps.rooms.models import Room, Building
 import re
 from datetime import datetime
 import time as time_module
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view
+from drf_spectacular.utils import extend_schema, inline_serializer
+
 
 MODELS_TO_TRY = [
     'gemini-3.1-flash-lite', 
@@ -136,7 +138,45 @@ class TimetableExtraction(BaseModel):
 class UploadTimetableView(APIView):
     parser_classes = [MultiPartParser]
 
+    @extend_schema(
+            summary="Upload timetable PDF",
+            description="Upload a PDF file containing the timetable and specify the semester_id to extract and save class sessions.",
+            request=inline_serializer(
+                name="TimetableUploadRequest",
+                fields={
+                    'file': serializers.FileField(),
+                    'semester_id': serializers.IntegerField(),
+                }
+
+            ),
+            responses={
+                200: inline_serializer(
+                    name="TimetableUploadResponse",
+                    fields={
+                        'message': serializers.CharField(),
+                        'extracted_count': serializers.IntegerField(),
+                        'saved_count': serializers.IntegerField(),
+                        'skipped_count': serializers.IntegerField(),
+                        'data': serializers.ListField(child=serializers.DictField()),
+                    }
+                ),
+                400: inline_serializer(
+                    name="TimetableUploadErrorResponse",
+                    fields={
+                        'error': serializers.CharField(),
+                    }
+                ),
+                404: inline_serializer(
+                    name="TimetableUploadNotFoundResponse",
+                    fields={
+                        'error': serializers.CharField(),
+                    }
+                ),
+            }
+    )
+
     def post(self, request):
+
         file_obj = request.FILES.get('file')
         semester_id = request.data.get('semester_id')
         
