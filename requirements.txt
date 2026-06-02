@@ -11,7 +11,7 @@ Django==6.0.5
 djangorestframework==3.17.1
 drf-spectacular
 google-ai-generativelanguage==0.6.15
-google-api-core==2.30.3
+google-api-core
 google-api-python-client==2.196.0
 google-auth==2.53.0
 google-auth-httplib2==0.4.0
