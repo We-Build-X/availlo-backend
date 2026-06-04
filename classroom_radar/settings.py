@@ -28,8 +28,7 @@ SECRET_KEY = 'django-insecure-qmrdf-6_##a9g)3err()axt!qu2c_16)=fh*&s0fxr_rh@!km(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
-
+ALLOWED_HOSTS = ['localhost','ocalhost:5173', "availlo.vercel.app", "https://availlo-backend.onrender.com"]
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
@@ -86,9 +85,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'classroom_radar.wsgi.application'
 
-ALLOWED_HOSTS = ['*']
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = False
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
