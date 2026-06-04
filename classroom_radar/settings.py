@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-qmrdf-6_##a9g)3err()axt!qu2c_16)=fh*&s0fxr_rh@!km(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost','ocalhost:5173', "availlo.vercel.app", "https://availlo-backend.onrender.com"]
+ALLOWED_HOSTS = ['localhost','localhost:5173', "availlo.vercel.app", "availlo-backend.onrender.com"]
 CORS_ORIGIN_ALLOW_ALL = True
 
 
