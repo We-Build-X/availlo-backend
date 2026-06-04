@@ -30,7 +30,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost','ocalhost:5173', "availlo.vercel.app", "https://availlo-backend.onrender.com"]
 CORS_ORIGIN_ALLOW_ALL = True
-ACCESS_CONTROL_ALLOW_ORIGIN = "*"
 
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
