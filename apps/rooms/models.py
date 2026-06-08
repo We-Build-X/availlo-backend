@@ -2,7 +2,7 @@ from django.db import models
 
 class Building(models.Model):
     name = models.CharField(max_length=100, blank=True) #(e.g., "New Engineering Building")
-    code = models.CharField(max_length=10, unique=True) #(e.g., "NEB")
+    code = models.CharField(max_length=100, unique=True) #(e.g., "NEB")
 
     def __str__(self):
         return self.name

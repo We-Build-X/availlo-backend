@@ -97,9 +97,19 @@ def is_non_permsite_venue(venue: str) -> bool:
 
 
 def split_and_filter_venues(raw_venue_string: str) -> list[str]:
+    # split on semicolon, comma or slash to handle values like "ELF/TETFUND"
+    parts = [p for p in re.split(r"[;,/]", raw_venue_string or '')]
+    normalized_parts = [normalize_venue(p) for p in parts if p and p.strip()]
+
+    # Special rule: when ELF and TETFUND appear together (e.g. "ELF LT./TETFUND",
+    # "ELF/TETFUND"), prefer and return only TETFUND as the effective venue.
+    has_elf = any(p.startswith('ELF') for p in normalized_parts)
+    has_tetfund = any('TETFUND' in p for p in normalized_parts)
+    if has_elf and has_tetfund:
+        return ['TETFUND']
+
     kept = []
-    for part in re.split(r'[;,]', raw_venue_string or ''):
-        normalized = normalize_venue(part)
+    for normalized in normalized_parts:
         if normalized and not is_non_permsite_venue(normalized):
             kept.append(normalized)
     return kept
