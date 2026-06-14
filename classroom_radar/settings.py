@@ -88,9 +88,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'classroom_radar.wsgi.application'
 
-DATABASE_URL = os.environ.get("DATABASE")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-DATABASE= dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+# DATABASE= dj_database_url.parse(DATABASE_URL, conn_max_age=600)
 
 
 # Database
@@ -98,7 +98,7 @@ DATABASE= dj_database_url.parse(DATABASE_URL, conn_max_age=600)
 
 if DATABASE_URL:
     DATABASES = {
-        'default': DATABASE
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
 else:
     DATABASES = {
