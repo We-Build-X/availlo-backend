@@ -114,3 +114,30 @@ class OccupiedRoomView(APIView):
                 })
             
         return Response(occupied_rooms, status=status.HTTP_200_OK)
+    
+
+class EndingSoonView(APIView):
+    @extend_schema(
+        responses={200: RoomSerializer(many=True)}
+    )
+    def get(self, request):
+        rooms = Room.objects.select_related('building').all()
+        ending_soon_rooms = []
+        for room in rooms:
+            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
+            if not room_status.get("is_free") and room_status.get("current_session"):
+                end_time_str = room_status["current_session"]["end_time"]
+                end_time = datetime.strptime(end_time_str, "%H:%M").time()
+                current_time = datetime.now(ZoneInfo("Africa/Lagos")).time()
+                time_diff = (datetime.combine(datetime.today(), end_time) - datetime.combine(datetime.today(), current_time)).total_seconds() / 60
+                if 0 < time_diff <= 15:  # Ending within the next 15 minutes
+                    ending_soon_rooms.append({
+                        "id": room.id,
+                        "name": room.name,
+                        "building": room.building.name if room.building else None,
+                        "capacity": room.capacity,
+                        "current_session": room_status.get("current_session"),
+                        "minutes_until_free": int(time_diff)
+                    })
+            
+        return Response(ending_soon_rooms, status=status.HTTP_200_OK)
