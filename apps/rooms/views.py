@@ -12,8 +12,6 @@ from zoneinfo import ZoneInfo
 
     
 
-
-
 class RoomListView(APIView):
     @extend_schema(
         responses={200: RoomSerializer(many=True)}
@@ -96,3 +94,23 @@ class SearchRoomView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 #CREATE ENDPOINT FOR THIS.. REMEMBER
+
+class OccupiedRoomView(APIView):
+    @extend_schema(
+        responses={200: RoomSerializer(many=True)}
+    )
+    def get(self, request):
+        rooms = Room.objects.select_related('building').all()
+        occupied_rooms = []
+        for room in rooms:
+            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
+            if not room_status.get("is_free"):
+                occupied_rooms.append({
+                    "id": room.id,
+                    "name": room.name,
+                    "building": room.building.name if room.building else None,
+                    "capacity": room.capacity,
+                    "current_session": room_status.get("current_session")
+                })
+            
+        return Response(occupied_rooms, status=status.HTTP_200_OK)
