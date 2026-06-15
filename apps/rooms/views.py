@@ -7,6 +7,9 @@ from .status_engine import get_room_status
 from datetime import datetime
 from .models import Room
 from drf_spectacular.utils import extend_schema, OpenApiParameter
+from zoneinfo import ZoneInfo
+
+
     
 
 
@@ -30,7 +33,7 @@ class RoomStatusView(APIView):
         except Room.DoesNotExist:
             return Response({"error": "Room not found"}, status=status.HTTP_404_NOT_FOUND)
         
-        room_status = get_room_status(room, datetime.now())
+        room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
         
         return Response(room_status, status=status.HTTP_200_OK)
     
@@ -54,7 +57,7 @@ class FreeRoomList(APIView):
 
         free_rooms = []
         for room in rooms:
-            room_status = get_room_status(room, datetime.now())
+            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
             if room_status.get("is_free"):
                 free_rooms.append({
                     "id": room.id,
@@ -83,7 +86,7 @@ class SearchRoomView(APIView):
         serializer = RoomSerializer(rooms, many=True)
 
         for room in rooms:
-            room_status = get_room_status(room, datetime.now())
+            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
             room_data = next((item for item in serializer.data if item["id"] == room.id), None)
             if room_data:
                 room_data["is_free"] = room_status.get("is_free")

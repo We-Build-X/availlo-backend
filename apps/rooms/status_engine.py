@@ -19,12 +19,14 @@ def get_room_status(room, current_datetime):
         end_time__gt=current_time  # strictly greater so room is free exactly at end time
     ).distinct().first()
 
+    reference_time = ongoing_session.end_time if ongoing_session else current_time
+
     # find next session today
     next_session = ClassSession.objects.filter(
         semester=active_semester,
         day_of_week=day_name,
         session_rooms__room=room,
-        start_time__gt=current_time
+        start_time__gt=reference_time
     ).distinct().order_by('start_time').first()
 
     # build next session data if it exists
