@@ -37,6 +37,13 @@ class ClassSession(models.Model):
 
     raw_venue_text = models.TextField(null=True, blank=True)
 
+    class Meta:
+        indexes = [
+            # Matches the status-engine filter: semester + day_of_week, then
+            # ordering/filtering by start_time.
+            models.Index(fields=['semester', 'day_of_week', 'start_time']),
+        ]
+
     def __str__(self):
         return f"{self.course_code} - ({self.semester.name})"
 
@@ -48,3 +55,7 @@ class SessionRoom(models.Model):
 
     class Meta:
         unique_together = ('class_session', 'room')
+        indexes = [
+            # The bulk status query filters SessionRoom by room_id.
+            models.Index(fields=['room']),
+        ]

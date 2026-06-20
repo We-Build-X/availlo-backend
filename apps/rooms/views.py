@@ -2,14 +2,20 @@ from django.shortcuts import render
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .serializers import RoomSerializer
-from .status_engine import get_room_status
+from .serializers import RoomSerializer, FreeRoomSerializer
+from .status_engine import get_room_status, get_rooms_status_bulk
 from datetime import datetime
 from .models import Room
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from zoneinfo import ZoneInfo
+from rest_framework.pagination import PageNumberPagination
 
 
+
+
+
+class SetPagination(PageNumberPagination):
+    page_size = 10
     
 
 class RoomListView(APIView):
@@ -50,22 +56,37 @@ class FreeRoomList(APIView):
     def get(self, request):
         building_code = request.query_params.get('building', None)
         rooms = Room.objects.select_related('building').all()
+        paginator = SetPagination()
+        
+        
+
         if building_code:
             rooms =rooms.filter(building__code=building_code.upper())
 
+        rooms = list(rooms)
+        statuses = get_rooms_status_bulk(rooms, datetime.now(ZoneInfo("Africa/Lagos")))
+
         free_rooms = []
         for room in rooms:
-            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
+            room_status = statuses[room.id]
             if room_status.get("is_free"):
                 free_rooms.append({
                     "id": room.id,
                     "name": room.name,
-                    "building": room.building.name if room.building else None,
+                    "building":{
+                            "id": room.building.id if room.building else None,
+                            "name": room.building.name if room.building else None,
+                            "code": room.building.code if room.building else None
+
+                    },
                     "capacity": room.capacity,
                     "next_session": room_status.get("next_session")
                 })
+        page =paginator.paginate_queryset(free_rooms, request)
+
+        serializer = FreeRoomSerializer(page, many=True)
             
-        return Response(free_rooms, status=status.HTTP_200_OK)
+        return paginator.get_paginated_response(serializer.data)
 
 class SearchRoomView(APIView):
     @extend_schema(
@@ -80,35 +101,43 @@ class SearchRoomView(APIView):
     )
     def get(self, request):
         query = request.query_params.get('q', '')
-        rooms = Room.objects.filter(name__icontains=query).select_related('building')
+        rooms = list(Room.objects.filter(name__icontains=query).select_related('building'))
         serializer = RoomSerializer(rooms, many=True)
+        pagination_class = SetPagination()
 
+        statuses = get_rooms_status_bulk(rooms, datetime.now(ZoneInfo("Africa/Lagos")))
         for room in rooms:
-            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
+            room_status = statuses[room.id]
             room_data = next((item for item in serializer.data if item["id"] == room.id), None)
             if room_data:
                 room_data["is_free"] = room_status.get("is_free")
                 room_data["next_session"] = room_status.get("next_session")
 
-
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        page = pagination_class.paginate_queryset(serializer.data, request)
+        return pagination_class.get_paginated_response(page)
     
-#CREATE ENDPOINT FOR THIS.. REMEMBER
+
+    
 
 class OccupiedRoomView(APIView):
     @extend_schema(
         responses={200: RoomSerializer(many=True)}
     )
     def get(self, request):
-        rooms = Room.objects.select_related('building').all()
+        rooms = list(Room.objects.select_related('building').all())
+        statuses = get_rooms_status_bulk(rooms, datetime.now(ZoneInfo("Africa/Lagos")))
         occupied_rooms = []
         for room in rooms:
-            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
+            room_status = statuses[room.id]
             if not room_status.get("is_free"):
                 occupied_rooms.append({
                     "id": room.id,
                     "name": room.name,
-                    "building": room.building.name if room.building else None,
+                    "building": {
+                        "id": room.building.id if room.building else None,
+                        "name": room.building.name if room.building else None,
+                        "code": room.building.code if room.building else None
+                    },
                     "capacity": room.capacity,
                     "current_session": room_status.get("current_session")
                 })
@@ -121,10 +150,11 @@ class EndingSoonView(APIView):
         responses={200: RoomSerializer(many=True)}
     )
     def get(self, request):
-        rooms = Room.objects.select_related('building').all()
+        rooms = list(Room.objects.select_related('building').all())
+        statuses = get_rooms_status_bulk(rooms, datetime.now(ZoneInfo("Africa/Lagos")))
         ending_soon_rooms = []
         for room in rooms:
-            room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
+            room_status = statuses[room.id]
             if not room_status.get("is_free") and room_status.get("current_session"):
                 end_time_str = room_status["current_session"]["end_time"]
                 end_time = datetime.strptime(end_time_str, "%H:%M").time()
