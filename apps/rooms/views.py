@@ -2,7 +2,9 @@ from django.shortcuts import render
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .serializers import RoomSerializer, FreeRoomSerializer, RoomDetailSerializer
+from .serializers import RoomSerializer, FreeRoomSerializer, RoomDetailSerializer, TimetableEntrySerializer
+from apps.timetable.models import ClassSession, Semester
+from datetime import time
 from .status_engine import get_room_status, get_rooms_status_bulk
 from datetime import datetime
 from .models import Room
@@ -186,3 +188,83 @@ class RoomDetailView(APIView):
         room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
         serializer = RoomDetailSerializer(room, context={'room_status': room_status})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class RoomDailyTimetableView(APIView):
+    DAY_START = time(7, 0)
+    DAY_END = time(19, 0)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(name='date', description='Date in YYYY-MM-DD format (defaults to today)', required=False, type=str),
+        ],
+        responses={200: TimetableEntrySerializer(many=True)},
+    )
+    def get(self, request, slug):
+        try:
+            room = Room.objects.get(slug=slug)
+        except Room.DoesNotExist:
+            return Response({"error": "Room not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        date_str = request.query_params.get('date')
+        if date_str:
+            try:
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            target_date = datetime.now(ZoneInfo("Africa/Lagos")).date()
+
+        day_name = target_date.strftime("%A")
+        if day_name not in dict(ClassSession.DAYS_OF_WEEK):
+            entries = [
+                {
+                    "start_time": self.DAY_START.strftime("%H:%M"),
+                    "end_time": self.DAY_END.strftime("%H:%M"),
+                    "course_title": None,
+                    "is_class": False,
+                }
+            ]
+            serializer = TimetableEntrySerializer(entries, many=True)
+            return Response(serializer.data)
+
+        active_semester = Semester.objects.filter(is_active=True).first()
+        if not active_semester:
+            return Response({"error": "No active semester found."}, status=status.HTTP_404_NOT_FOUND)
+
+        sessions = ClassSession.objects.filter(
+            semester=active_semester,
+            day_of_week=day_name,
+            session_rooms__room=room,
+        ).order_by('start_time')
+
+        entries = []
+        prev_end = self.DAY_START
+
+        for session in sessions:
+            if prev_end < session.start_time:
+                entries.append({
+                    "start_time": prev_end.strftime("%H:%M"),
+                    "end_time": session.start_time.strftime("%H:%M"),
+                    "course_title": None,
+                    "is_class": False,
+                })
+
+            entries.append({
+                "start_time": session.start_time.strftime("%H:%M"),
+                "end_time": session.end_time.strftime("%H:%M"),
+                "course_title": session.course_code,
+                "is_class": True,
+            })
+            prev_end = session.end_time
+
+        if prev_end < self.DAY_END:
+            entries.append({
+                "start_time": prev_end.strftime("%H:%M"),
+                "end_time": self.DAY_END.strftime("%H:%M"),
+                "course_title": None,
+                "is_class": False,
+            })
+
+        serializer = TimetableEntrySerializer(entries, many=True)
+        return Response(serializer.data)

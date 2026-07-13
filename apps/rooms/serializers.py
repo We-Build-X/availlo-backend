@@ -31,6 +31,13 @@ class FreeRoomSerializer(serializers.Serializer):
     capacity = serializers.IntegerField()
     next_session = SessionPayloadSerializer(allow_null=True, required=False)
 
+class TimetableEntrySerializer(serializers.Serializer):
+    start_time = serializers.CharField()
+    end_time = serializers.CharField()
+    course_title = serializers.CharField(allow_null=True)
+    is_class = serializers.BooleanField()
+
+
 class RoomDetailSerializer(ModelSerializer):
     building = BuildingSerializer(read_only=True)
     status = serializers.SerializerMethodField()
