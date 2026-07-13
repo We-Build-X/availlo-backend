@@ -56,6 +56,8 @@ class SessionRoom(models.Model):
     class Meta:
         unique_together = ('class_session', 'room')
         indexes = [
-            # The bulk status query filters SessionRoom by room_id.
             models.Index(fields=['room']),
+            # Composite index matching the status engine query:
+            # WHERE room_id IN (...) JOIN class_session ON class_session_id = ...
+            models.Index(fields=['room', 'class_session']),
         ]

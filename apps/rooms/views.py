@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .serializers import RoomSerializer, FreeRoomSerializer
+from .serializers import RoomSerializer, FreeRoomSerializer, RoomDetailSerializer
 from .status_engine import get_room_status, get_rooms_status_bulk
 from datetime import datetime
 from .models import Room
@@ -171,3 +171,18 @@ class EndingSoonView(APIView):
                     })
             
         return Response(ending_soon_rooms, status=status.HTTP_200_OK)
+
+
+class RoomDetailView(APIView):
+    @extend_schema(
+        responses={200: RoomDetailSerializer}
+    )
+    def get(self, request, slug):
+        try:
+            room = Room.objects.select_related('building').get(slug=slug)
+        except Room.DoesNotExist:
+            return Response({"error": "Room not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        room_status = get_room_status(room, datetime.now(ZoneInfo("Africa/Lagos")))
+        serializer = RoomDetailSerializer(room, context={'room_status': room_status})
+        return Response(serializer.data, status=status.HTTP_200_OK)

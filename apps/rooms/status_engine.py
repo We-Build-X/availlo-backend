@@ -1,9 +1,8 @@
 from apps.timetable.models import ClassSession, Semester, SessionRoom
-from datetime import datetime
+from datetime import datetime, date, time
 
 
 def _session_payload(session):
-    """Serialize a single ClassSession into the status payload shape."""
     if not session:
         return None
     return {
@@ -15,11 +14,14 @@ def _session_payload(session):
     }
 
 
+def _minutes_between(t1: time, t2: time) -> float:
+    """t2 - t1 in minutes (both time objects)."""
+    d1 = datetime(2000, 1, 1, t1.hour, t1.minute, t1.second)
+    d2 = datetime(2000, 1, 1, t2.hour, t2.minute, t2.second)
+    return (d2 - d1).total_seconds() / 60
+
+
 def _build_status(room, sessions, current_time):
-    """
-    Compute a room's status from an already-fetched, start_time-ordered list
-    of that room's sessions for today. Does NOT touch the database.
-    """
     ongoing_session = None
     for session in sessions:
         if session.start_time <= current_time < session.end_time:
@@ -28,31 +30,37 @@ def _build_status(room, sessions, current_time):
 
     reference_time = ongoing_session.end_time if ongoing_session else current_time
 
-    # sessions are ordered by start_time, so the first match is the earliest
     next_session = None
     for session in sessions:
         if session.start_time > reference_time:
             next_session = session
             break
 
-    if ongoing_session:
-        return {
-            "room": room.name,
-            "is_free": False,
-            "source": "timetable",
-            "confidence_level": "high",
-            "current_session": _session_payload(ongoing_session),
-            "next_session": _session_payload(next_session),
-        }
-
-    return {
+    base = {
         "room": room.name,
-        "is_free": True,
         "source": "timetable",
         "confidence_level": "high",
-        "current_session": None,
-        "next_session": _session_payload(next_session),  # when it'll be occupied next
     }
+
+    if ongoing_session:
+        mins_remaining = _minutes_between(current_time, ongoing_session.end_time)
+        is_ending_soon = 0 < mins_remaining <= 15
+
+        base["is_free"] = False
+        base["current_session"] = _session_payload(ongoing_session)
+        base["next_session"] = _session_payload(next_session)
+        base["status"] = "ENDING_SOON" if is_ending_soon else "OCCUPIED"
+        base["free_until"] = None
+        base["next_available_time"] = ongoing_session.end_time.strftime("%H:%M")
+        return base
+
+    base["is_free"] = True
+    base["current_session"] = None
+    base["next_session"] = _session_payload(next_session)
+    base["status"] = "FREE"
+    base["free_until"] = next_session.start_time.strftime("%H:%M") if next_session else None
+    base["next_available_time"] = None
+    return base
 
 
 def get_rooms_status_bulk(rooms, current_datetime):
