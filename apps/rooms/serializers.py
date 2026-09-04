@@ -40,6 +40,7 @@ class TimetableEntrySerializer(serializers.Serializer):
 
 class RoomDetailSerializer(ModelSerializer):
     building = BuildingSerializer(read_only=True)
+    image = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     free_until = serializers.SerializerMethodField()
     next_available_time = serializers.SerializerMethodField()
@@ -47,10 +48,13 @@ class RoomDetailSerializer(ModelSerializer):
     class Meta:
         model = Room
         fields = [
-            'id', 'slug', 'name', 'building', 'capacity',
+            'id', 'slug', 'name', 'full_name', 'building', 'faculty', 'capacity',
             'has_power', 'image',
             'status', 'free_until', 'next_available_time',
         ]
+
+    def get_image(self, obj):
+        return obj.image.url if obj.image else None
 
     def get_status(self, obj):
         data = self.context.get('room_status', {})
@@ -63,3 +67,26 @@ class RoomDetailSerializer(ModelSerializer):
     def get_next_available_time(self, obj):
         data = self.context.get('room_status', {})
         return data.get('next_available_time') if 'error' not in data else None
+
+
+class AdminRoomSerializer(ModelSerializer):
+    building = serializers.PrimaryKeyRelatedField(
+        queryset=Building.objects.all(), required=False, allow_null=True
+    )
+    image = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = Room
+        fields = [
+            'id', 'name', 'slug', 'full_name', 'faculty',
+            'building', 'capacity', 'has_power', 'image',
+        ]
+        read_only_fields = ['id', 'slug']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['building'] = (
+            BuildingSerializer(instance.building).data if instance.building else None
+        )
+        data['image'] = instance.image.url if instance.image else None
+        return data

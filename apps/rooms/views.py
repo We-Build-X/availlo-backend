@@ -1,14 +1,18 @@
 from django.shortcuts import render
-from rest_framework import status
+from rest_framework import status, viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .serializers import RoomSerializer, FreeRoomSerializer, RoomDetailSerializer, TimetableEntrySerializer
+from rest_framework.permissions import IsAdminUser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from .serializers import RoomSerializer, FreeRoomSerializer, RoomDetailSerializer, TimetableEntrySerializer, AdminRoomSerializer
 from apps.timetable.models import ClassSession, Semester
 from datetime import time
 from .status_engine import get_room_status, get_rooms_status_bulk
 from datetime import datetime
 from .models import Room
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from django.db.models import Q
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
 from zoneinfo import ZoneInfo
 from rest_framework.pagination import PageNumberPagination
 
@@ -268,3 +272,42 @@ class RoomDailyTimetableView(APIView):
 
         serializer = TimetableEntrySerializer(entries, many=True)
         return Response(serializer.data)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter('search', str, description='Case-insensitive match on room name, building name, or building code'),
+            OpenApiParameter('faculty', str, description='Exact (case-insensitive) faculty filter'),
+            OpenApiParameter('page', int, description='Page number (page_size=10)'),
+        ],
+        responses={200: AdminRoomSerializer(many=True)},
+    ),
+    create=extend_schema(request=AdminRoomSerializer, responses={201: AdminRoomSerializer}),
+    retrieve=extend_schema(responses={200: AdminRoomSerializer}),
+    update=extend_schema(request=AdminRoomSerializer, responses={200: AdminRoomSerializer}),
+    partial_update=extend_schema(request=AdminRoomSerializer, responses={200: AdminRoomSerializer}),
+    destroy=extend_schema(responses={204: None}),
+)
+class AdminRoomViewSet(viewsets.ModelViewSet):
+    """Admin-only CRUD for rooms. Gated behind IsAdminUser (staff)."""
+    serializer_class = AdminRoomSerializer
+    permission_classes = [IsAdminUser]
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    pagination_class = SetPagination
+    lookup_field = 'slug'
+
+    def get_queryset(self):
+        qs = Room.objects.select_related('building').all().order_by('id')
+        search = self.request.query_params.get('search')
+        faculty = self.request.query_params.get('faculty')
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search)
+                | Q(building__name__icontains=search)
+                | Q(building__code__icontains=search)
+            )
+        if faculty:
+            qs = qs.filter(faculty__iexact=faculty)
+        return qs

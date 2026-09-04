@@ -18,6 +18,9 @@ class CheckIn(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True) #(when the check-in was made)
     session_key = models.CharField(max_length=100, null=True,blank=True) #To loosely identify the user, no login required
 
+    class Meta:
+        unique_together = (('room', 'session_key'),)  # Ensure one check-in per room per session_key
+
 class RoomStatus(models.Model):
     room = models.OneToOneField(Room, on_delete=models.CASCADE, related_name='statuses')
     is_free = models.BooleanField(default=True) #(True if the room is free, False if occupied)
