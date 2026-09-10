@@ -140,7 +140,14 @@ class ClassSessionSchema(BaseModel):
     level: str       # e.g., "300 Level"
     group: str       # e.g., "Group 1", can be empty
 
+def normalize_semester_name(raw: str) -> str:
+    name = (raw or "").strip()
+    name = re.sub(r'\s+', ' ', name)
+    return name
+
+
 class TimetableExtraction(BaseModel):
+    semester_name: str
     sessions: List[ClassSessionSchema]
 
 
@@ -150,12 +157,11 @@ class UploadTimetableView(APIView):
 
     @extend_schema(
             summary="Upload timetable PDF",
-            description="Upload a PDF file containing the timetable and specify the semester_id to extract and save class sessions.",
+            description="Upload a PDF file containing the timetable. The semester name is extracted verbatim from the timetable header and a Semester is auto-created (case-insensitive dedup). Re-uploading the same semester replaces existing sessions.",
             request=inline_serializer(
                 name="TimetableUploadRequest",
                 fields={
                     'file': serializers.FileField(),
-                    'semester_id': serializers.IntegerField(),
                 }
 
             ),
@@ -167,17 +173,12 @@ class UploadTimetableView(APIView):
                         'extracted_count': serializers.IntegerField(),
                         'saved_count': serializers.IntegerField(),
                         'skipped_count': serializers.IntegerField(),
+                        'semester': serializers.DictField(),
                         'data': serializers.ListField(child=serializers.DictField()),
                     }
                 ),
                 400: inline_serializer(
                     name="TimetableUploadErrorResponse",
-                    fields={
-                        'error': serializers.CharField(),
-                    }
-                ),
-                404: inline_serializer(
-                    name="TimetableUploadNotFoundResponse",
                     fields={
                         'error': serializers.CharField(),
                     }
@@ -188,37 +189,28 @@ class UploadTimetableView(APIView):
     def post(self, request):
 
         file_obj = request.FILES.get('file')
-        semester_id = request.data.get('semester_id')
-        
+
         if not file_obj:
             return Response({"error": "No file provided"}, status=400)
-            
-        if not semester_id:
-            return Response({"error": "semester_id is required"}, status=400)
-            
-        try:
-            semester = Semester.objects.get(id=semester_id)
-        except Semester.DoesNotExist:
-            return Response({"error": "Invalid semester_id"}, status=404)
 
-                # Initialize the new Client
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        
+
         file_bytes = file_obj.read()
         images = convert_from_bytes(file_bytes)
-        
+
         all_sessions = []
-        
+        extracted_semester_name = None
+
         prompt = """
-        You are a specialized data extraction assistant. Extract timetable data from the provided image. 
-        Pay close attention to merged cells. If a course spans multiple time blocks, create one single 
+        You are a specialized data extraction assistant. Extract timetable data from the provided image.
+        Pay close attention to merged cells. If a course spans multiple time blocks, create one single
         session with the combined start and end times. Infer the year/level from the headings (e.g., '100 Level', '200 Level').
         If group is mentioned, include it; otherwise leave empty string. Day should be exactly one of: Monday, Tuesday, Wednesday, Thursday, Friday.
         Time should be in HH:MM format like '08:00'.
+        Also extract the semester/academic session title verbatim from the timetable header/title (e.g., "2024/2025 Second Semester", "2025/2026 First Semester Timetable"). Return it verbatim as semester_name, collapsed whitespace only, no reformatting. If not visible, return empty string.
         """
 
         for image_pil in images:
-            # Use the new client.models.generate_content format
             response = generate_with_fallback(
                 client=client,
                 contents=[prompt, image_pil],
@@ -227,10 +219,30 @@ class UploadTimetableView(APIView):
                     response_schema=TimetableExtraction,
                 ),
             )
-            
+
             if response.text:
                 page_data = json.loads(response.text)
+                if not extracted_semester_name:
+                    candidate = normalize_semester_name(page_data.get("semester_name", ""))
+                    if candidate:
+                        extracted_semester_name = candidate
                 all_sessions.extend(page_data.get("sessions", []))
+
+        if not extracted_semester_name:
+            return Response({"error": "Could not extract semester name from timetable header"}, status=400)
+
+        semester = Semester.objects.filter(name__iexact=extracted_semester_name).first()
+        if semester:
+            created = False
+            ClassSession.objects.filter(semester=semester).delete()
+        else:
+            semester = Semester.objects.create(name=extracted_semester_name, is_active=True)
+            created = True
+
+        if semester.is_active is not True:
+            semester.is_active = True
+            semester.save(update_fields=["is_active"])
+        Semester.objects.filter(is_active=True).exclude(id=semester.id).update(is_active=False)
                 
         # Save to database: create one ClassSession and link one or more Room(s) via SessionRoom
         saved_count = 0
@@ -285,6 +297,7 @@ class UploadTimetableView(APIView):
             "extracted_count": len(all_sessions),
             "saved_count": saved_count,
             "skipped_count": skipped,
+            "semester": {"id": semester.id, "name": semester.name, "is_active": semester.is_active, "created": created},
             "data": response_data,
         })
 
