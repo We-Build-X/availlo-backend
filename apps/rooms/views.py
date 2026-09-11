@@ -29,9 +29,27 @@ class RoomListView(APIView):
         responses={200: RoomSerializer(many=True)}
     )
     def get(self, request):
-        rooms = Room.objects.select_related('building').all()
+        rooms = list(Room.objects.select_related('building').all())
+        statuses = get_rooms_status_bulk(rooms, datetime.now(ZoneInfo("Africa/Lagos")))
         serializer = RoomSerializer(rooms, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        data = [dict(item) for item in serializer.data]
+        for room, item in zip(rooms, data):
+            s = statuses.get(room.id, {})
+            if "error" not in s:
+                item["is_free"] = s.get("is_free")
+                item["status"] = s.get("status")
+                item["current_session"] = s.get("current_session")
+                item["next_session"] = s.get("next_session")
+                item["free_until"] = s.get("free_until")
+                item["next_available_time"] = s.get("next_available_time")
+            else:
+                item["is_free"] = None
+                item["status"] = None
+                item["current_session"] = None
+                item["next_session"] = None
+                item["free_until"] = None
+                item["next_available_time"] = None
+        return Response(data, status=status.HTTP_200_OK)
     
 class RoomStatusView(APIView):
     @extend_schema(
@@ -78,6 +96,7 @@ class FreeRoomList(APIView):
             if room_status.get("is_free"):
                 free_rooms.append({
                     "id": room.id,
+                    "slug": room.slug,
                     "name": room.name,
                     "building":{
                             "id": room.building.id if room.building else None,
@@ -138,6 +157,7 @@ class OccupiedRoomView(APIView):
             if not room_status.get("is_free"):
                 occupied_rooms.append({
                     "id": room.id,
+                    "slug": room.slug,
                     "name": room.name,
                     "building": {
                         "id": room.building.id if room.building else None,
@@ -169,6 +189,7 @@ class EndingSoonView(APIView):
                 if 0 < time_diff <= 15:  # Ending within the next 15 minutes
                     ending_soon_rooms.append({
                         "id": room.id,
+                        "slug": room.slug,
                         "name": room.name,
                         "building": room.building.name if room.building else None,
                         "capacity": room.capacity,

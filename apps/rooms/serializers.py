@@ -15,7 +15,7 @@ class RoomSerializer(ModelSerializer):
 
     class Meta:
         model = Room
-        fields = ['id', 'name', 'building', 'capacity']
+        fields = ['id', 'slug', 'name', 'building', 'capacity']
 
 class SessionPayloadSerializer(serializers.Serializer):
     course_code = serializers.CharField()
@@ -26,6 +26,7 @@ class SessionPayloadSerializer(serializers.Serializer):
 
 class FreeRoomSerializer(serializers.Serializer):
     id = serializers.IntegerField()
+    slug = serializers.CharField()
     name = serializers.CharField(max_length=100)
     building = BuildingSerializer()
     capacity = serializers.IntegerField()
