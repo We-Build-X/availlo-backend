@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
+import cloudinary
 load_dotenv()  # Load environment variables from .env file
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -160,4 +161,19 @@ REST_FRAMEWORK = {
     ],
     # No DEFAULT_PERMISSION_CLASSES on purpose -> stays AllowAny so public GETs keep working.
     # Admin CRUD is gated per-view with IsAdminUser.
+}
+
+# cloudinary config
+
+cloudinary.config(
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET,
+    secure=True
+)
+
+CLOUDINARY_STORAGE = {
+    "CLOUD_NAME": CLOUDINARY_CLOUD_NAME,
+    "API_KEY": CLOUDINARY_API_SECRET,
+    "API_SECRET": CLOUDINARY_API_SECRET
 }
