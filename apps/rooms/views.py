@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from .serializers import RoomSerializer, FreeRoomSerializer, RoomDetailSerializer, TimetableEntrySerializer, AdminRoomSerializer
-from apps.timetable.models import ClassSession, Semester
+from apps.timetable.models import ClassSession, Semester, DAYS_OF_WEEK
 from datetime import time
 from .status_engine import get_room_status, get_rooms_status_bulk
 from datetime import datetime
@@ -241,7 +241,7 @@ class RoomDailyTimetableView(APIView):
             target_date = datetime.now(ZoneInfo("Africa/Lagos")).date()
 
         day_name = target_date.strftime("%A")
-        if day_name not in dict(ClassSession.DAYS_OF_WEEK):
+        if day_name not in dict(DAYS_OF_WEEK):
             entries = [
                 {
                     "start_time": self.DAY_START.strftime("%H:%M"),
