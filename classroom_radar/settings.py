@@ -43,6 +43,7 @@ CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -94,6 +95,22 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'classroom_radar.wsgi.application'
+ASGI_APPLICATION = 'classroom_radar.asgi.application'
+
+REDIS_URL = os.environ.get("REDIS_URL", "")
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        }
+    }
+else:
+    # Local dev without Redis: in-process only (no cross-worker fan-out).
+    CHANNEL_LAYERS = {
+        "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
+    }
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 

@@ -2,6 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, serializers
 from drf_spectacular.utils import extend_schema, OpenApiParameter, inline_serializer
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db.models import Count, Q
 
 from apps.rooms.models import Room
@@ -30,6 +32,21 @@ def vote_to_is_free(vote):
 
 def is_free_to_vote(is_free):
     return VOTE_FREE if is_free else VOTE_OCCUPIED
+
+
+def broadcast_vote_counts(room_slug, payload):
+    """Push fresh counts to WS subscribers of this room. Best-effort."""
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        async_to_sync(channel_layer.group_send)(
+            f"room_votes_{room_slug}",
+            {"type": "votes.update", "data": {"room": room_slug, **payload}},
+        )
+    except Exception:
+        # Never break the REST vote path because push failed.
+        pass
 
 
 class VoteRequestSerializer(serializers.Serializer):
@@ -85,6 +102,7 @@ class RoomVoteView(APIView):
         )
 
         counts = get_vote_counts(room)
+        broadcast_vote_counts(room.slug, counts)
         return Response(
             {"room": room.slug, "user_vote": vote, **counts},
             status=status.HTTP_200_OK,

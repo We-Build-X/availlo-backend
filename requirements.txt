@@ -59,3 +59,7 @@ typing_extensions==4.15.0
 uritemplate==4.2.0
 urllib3==2.7.0
 websockets==16.0
+channels==4.3.2
+channels-redis==4.3.0
+daphne==4.2.3
+redis==8.1.0
