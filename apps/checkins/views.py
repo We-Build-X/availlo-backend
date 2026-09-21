@@ -42,7 +42,10 @@ def broadcast_vote_counts(room_slug, payload):
             return
         async_to_sync(channel_layer.group_send)(
             f"room_votes_{room_slug}",
-            {"type": "votes.update", "data": {"room": room_slug, **payload}},
+            {
+                "type": "votes.update",
+                "data": {"room": room_slug, "live": True, **payload},
+            },
         )
     except Exception:
         # Never break the REST vote path because push failed.
