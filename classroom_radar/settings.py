@@ -103,14 +103,21 @@ if REDIS_URL:
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {"hosts": [REDIS_URL]},
+            "CONFIG": {
+                "hosts":[{
+                    "address":REDIS_URL,
+                    "socket_timeout":15,
+                    "socket_connect_timeout":5,
+
+                }],
+            }
         }
     }
 else:
     # Local dev without Redis: in-process only (no cross-worker fan-out).
     CHANNEL_LAYERS = {
         "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
-    }
+}
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
