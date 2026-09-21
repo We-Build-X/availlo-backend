@@ -45,6 +45,7 @@ class RoomDetailSerializer(ModelSerializer):
     status = serializers.SerializerMethodField()
     free_until = serializers.SerializerMethodField()
     next_available_time = serializers.SerializerMethodField()
+    votes = serializers.SerializerMethodField()
 
     class Meta:
         model = Room
@@ -52,6 +53,7 @@ class RoomDetailSerializer(ModelSerializer):
             'id', 'slug', 'name', 'full_name', 'building', 'faculty', 'capacity',
             'has_power', 'image',
             'status', 'free_until', 'next_available_time',
+            'votes',
         ]
 
     def get_image(self, obj):
@@ -68,6 +70,10 @@ class RoomDetailSerializer(ModelSerializer):
     def get_next_available_time(self, obj):
         data = self.context.get('room_status', {})
         return data.get('next_available_time') if 'error' not in data else None
+
+    def get_votes(self, obj):
+        from apps.checkins.views import get_vote_counts
+        return get_vote_counts(obj)
 
 
 class AdminRoomSerializer(ModelSerializer):
