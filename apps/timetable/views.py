@@ -13,9 +13,14 @@ from apps.rooms.models import Room, Building
 import re
 from datetime import datetime
 import time as time_module
-from rest_framework import serializers, status
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import api_view
-from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework.permissions import IsAdminUser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from rest_framework.pagination import PageNumberPagination
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, inline_serializer
+from .serializers import ClassSessionAdminSerializer
 
 
 MODELS_TO_TRY = [
@@ -130,6 +135,48 @@ def derive_building_code(venue: str) -> str:
         return match.group(1).strip().upper()
 
     return venue.strip().upper()
+
+
+class AdminSessionPagination(PageNumberPagination):
+    page_size = 10
+
+
+def link_session_to_venue_parts(session: ClassSession, venue_parts: list[str]) -> list[Room]:
+    """Create Building/Room rows as needed and sync SessionRoom links.
+
+    Links in `venue_parts` are kept; stale links are removed.
+    Returns the linked Room objects.
+    """
+    desired_rooms: list[Room] = []
+    for part in venue_parts:
+        building_code = derive_building_code(part)
+        building_obj, _ = Building.objects.get_or_create(
+            code=building_code, defaults={'name': building_code}
+        )
+        room_obj, _ = Room.objects.get_or_create(
+            name=part, defaults={'building': building_obj}
+        )
+        if room_obj.building_id is None:
+            room_obj.building = building_obj
+            room_obj.save(update_fields=['building'])
+        SessionRoom.objects.get_or_create(class_session=session, room=room_obj)
+        desired_rooms.append(room_obj)
+    if desired_rooms:
+        SessionRoom.objects.filter(class_session=session).exclude(
+            room__in=[r.id for r in desired_rooms]
+        ).delete()
+    return desired_rooms
+
+
+def sync_session_rooms_from_raw(session: ClassSession, raw_venue_text: str) -> list[Room]:
+    """Re-derive venue parts from raw text and sync SessionRoom links.
+
+    Raises ValueError if no valid permsite venue remains.
+    """
+    venue_parts = split_and_filter_venues(raw_venue_text or '')
+    if not venue_parts:
+        raise ValueError("No valid permsite venue remains after normalization/filtering.")
+    return link_session_to_venue_parts(session, venue_parts)
 
 class ClassSessionSchema(BaseModel):
     day: str
@@ -273,17 +320,14 @@ class UploadTimetableView(APIView):
                 raw_venue_text=s.get('venue', ''),
             )
 
-            linked = 0
-            for part in venue_parts:
-                building_code = derive_building_code(part)
-                building_obj, _ = Building.objects.get_or_create(code=building_code, defaults={'name': building_code})
-
-                room_obj, _ = Room.objects.get_or_create(name=part, defaults={'building': building_obj})
-
-                # link via through model
-                SessionRoom.objects.get_or_create(class_session=session, room=room_obj)
-                linked += 1
-                response_data.append({**s, 'linked_room': room_obj.name, 'building': building_obj.code})
+            linked_rooms = link_session_to_venue_parts(session, venue_parts)
+            linked = len(linked_rooms)
+            for room_obj in linked_rooms:
+                response_data.append({
+                    **s,
+                    'linked_room': room_obj.name,
+                    'building': room_obj.building.code if room_obj.building else derive_building_code(room_obj.name),
+                })
 
             if linked == 0:
                 # nothing to link; delete session placeholder
@@ -305,3 +349,79 @@ class UploadTimetableView(APIView):
 @api_view(['GET'])
 def health_check(request):
     return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter('semester', int, description='Filter by semester id'),
+            OpenApiParameter('day', str, description='Filter by day of week (e.g. Monday)'),
+            OpenApiParameter('course_code', str, description='Case-insensitive match on course code'),
+            OpenApiParameter('room', str, description='Case-insensitive match on linked room name'),
+            OpenApiParameter('page', int, description='Page number (page_size=10)'),
+        ],
+        responses={200: ClassSessionAdminSerializer(many=True)},
+    ),
+    create=extend_schema(request=ClassSessionAdminSerializer, responses={201: ClassSessionAdminSerializer}),
+    retrieve=extend_schema(responses={200: ClassSessionAdminSerializer}),
+    update=extend_schema(request=ClassSessionAdminSerializer, responses={200: ClassSessionAdminSerializer}),
+    partial_update=extend_schema(request=ClassSessionAdminSerializer, responses={200: ClassSessionAdminSerializer}),
+    destroy=extend_schema(responses={204: None}),
+)
+class AdminSessionViewSet(viewsets.ModelViewSet):
+    """Admin-only CRUD for ClassSessions to correct extraction mistakes.
+
+    Editing `raw_venue_text` (or setting it on create) automatically
+    re-normalizes venues and re-syncs Building/Room/SessionRoom links
+    using the same pipeline as timetable upload (so FL vs GD stays distinct).
+    """
+
+    serializer_class = ClassSessionAdminSerializer
+    permission_classes = [IsAdminUser]
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
+    pagination_class = AdminSessionPagination
+
+    def get_queryset(self):
+        qs = (
+            ClassSession.objects.select_related('semester')
+            .prefetch_related('rooms__building')
+            .all()
+            .order_by('day_of_week', 'start_time', 'id')
+        )
+        semester = self.request.query_params.get('semester')
+        day = self.request.query_params.get('day')
+        course_code = self.request.query_params.get('course_code')
+        room = self.request.query_params.get('room')
+        if semester:
+            qs = qs.filter(semester_id=semester)
+        if day:
+            qs = qs.filter(day_of_week__iexact=day)
+        if course_code:
+            qs = qs.filter(course_code__icontains=course_code)
+        if room:
+            qs = qs.filter(rooms__name__icontains=room)
+        return qs.distinct()
+
+    def _sync_rooms(self, session, raw_venue_text, is_new=False):
+        if raw_venue_text is None and not is_new:
+            return
+        try:
+            sync_session_rooms_from_raw(session, raw_venue_text or '')
+        except ValueError as e:
+            if is_new:
+                session.delete()
+            raise serializers.ValidationError({"raw_venue_text": str(e)})
+
+    def perform_create(self, serializer):
+        if 'semester' not in serializer.validated_data:
+            raise serializers.ValidationError(
+                {"semester": "semester id is required."}
+            )
+        session = serializer.save()
+        self._sync_rooms(session, serializer.validated_data.get('raw_venue_text'), is_new=True)
+
+    def perform_update(self, serializer):
+        session = serializer.save()
+        if 'raw_venue_text' in serializer.validated_data:
+            self._sync_rooms(session, serializer.validated_data.get('raw_venue_text'))
